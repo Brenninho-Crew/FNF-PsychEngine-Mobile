@@ -153,10 +153,9 @@
 	<!--Disable the native cursor API on Flash-->
 	<!--<haxedef name="FLX_NO_NATIVE_CURSOR" />-->
 
-	<!-- Em mobile: desativa mouse/teclado e mantém toque ativo -->
-	<haxedef name="FLX_NO_MOUSE" if="mobile" />
-	<haxedef name="FLX_NO_KEYBOARD" if="mobile" />
-	<!-- NÃO desabilite FLX_NO_TOUCH em mobile — toque deve ficar ativo -->
+	<!-- Toque ativo em mobile — NÃO desabilitar FLX_NO_TOUCH -->
+	<!-- FLX_NO_MOUSE e FLX_NO_KEYBOARD foram removidos: o código-fonte usa
+	     FlxG.keys/mouse sem guards #if, desabilitá-los quebra a compilação -->
 	<!-- <haxedef name="FLX_NO_TOUCH" if="desktop" /> -->
 	<!--<haxedef name="FLX_NO_GAMEPAD" />-->
 
