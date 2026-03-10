@@ -35,6 +35,10 @@ import haxe.io.Path;
 
 import backend.Highscore;
 
+#if android
+import lime.system.JNI;
+#end
+
 #if (linux && !debug)
 @:cppInclude('./external/gamemode_client.h')
 @:cppFileCode('#define GAMEMODE_AUTO')
@@ -53,6 +57,22 @@ class Main extends Sprite
 
 	public static var fpsVar:FPSCounter;
 
+	/**
+	 * Pasta raiz do PsychEngine no external storage do Android.
+	 * Exemplo: /storage/emulated/0/Android/data/com.shadowmario.psychengine/files/
+	 * Cacheado na primeira chamada.
+	 */
+	#if android
+	static var _externalDir:String = null;
+	public static var externalDir(get, never):String;
+	static function get_externalDir():String
+	{
+		if (_externalDir != null) return _externalDir;
+		_externalDir = Path.addTrailingSlash(_getExternalStorageDirRaw());
+		return _externalDir;
+	}
+	#end
+
 	public static function main():Void
 	{
 		Lib.current.addChild(new Main());
@@ -66,10 +86,13 @@ class Main extends Sprite
 		backend.Native.fixScaling();
 		#end
 
+		// ── Mobile storage setup ──────────────────────────────────────
 		#if android
-		Sys.setCwd(Path.addTrailingSlash(getExternalStorageDir()));
+		var extDir = externalDir;
+		Sys.setCwd(extDir);
+		_setupExternalStorage(extDir);   // cria pastas e copia arquivos iniciais
 		#elseif ios
-		Sys.setCwd(lime.system.System.applicationStorageDirectory);
+		Sys.setCwd(Path.addTrailingSlash(lime.system.System.applicationStorageDirectory));
 		#end
 
 		#if VIDEOS_ALLOWED
@@ -91,10 +114,7 @@ class Main extends Sprite
 			if (newPos.showLine == null) newPos.showLine = true;
 			var msgInfo:String = (newPos.funcName != null ? '(${newPos.funcName}) - ' : '') + '${newPos.fileName}:';
 			#if LUA_ALLOWED
-			if (newPos.isLua == true) {
-				msgInfo += 'HScript:';
-				newPos.showLine = false;
-			}
+			if (newPos.isLua == true) { msgInfo += 'HScript:'; newPos.showLine = false; }
 			#end
 			if (newPos.showLine == true) msgInfo += '${newPos.lineNumber}:';
 			msgInfo += ' $x';
@@ -107,10 +127,7 @@ class Main extends Sprite
 			if (newPos.showLine == null) newPos.showLine = true;
 			var msgInfo:String = (newPos.funcName != null ? '(${newPos.funcName}) - ' : '') + '${newPos.fileName}:';
 			#if LUA_ALLOWED
-			if (newPos.isLua == true) {
-				msgInfo += 'HScript:';
-				newPos.showLine = false;
-			}
+			if (newPos.isLua == true) { msgInfo += 'HScript:'; newPos.showLine = false; }
 			#end
 			if (newPos.showLine == true) msgInfo += '${newPos.lineNumber}:';
 			msgInfo += ' $x';
@@ -123,10 +140,7 @@ class Main extends Sprite
 			if (newPos.showLine == null) newPos.showLine = true;
 			var msgInfo:String = (newPos.funcName != null ? '(${newPos.funcName}) - ' : '') + '${newPos.fileName}:';
 			#if LUA_ALLOWED
-			if (newPos.isLua == true) {
-				msgInfo += 'HScript:';
-				newPos.showLine = false;
-			}
+			if (newPos.isLua == true) { msgInfo += 'HScript:'; newPos.showLine = false; }
 			#end
 			if (newPos.showLine == true) msgInfo += '${newPos.lineNumber}:';
 			msgInfo += ' $x';
@@ -161,7 +175,7 @@ class Main extends Sprite
 		#end
 
 		#if mobile
-		FlxG.autoPause = false;
+		FlxG.autoPause = false; // evita freeze ao minimizar
 		#end
 
 		FlxG.fixedTimestep = false;
@@ -191,54 +205,147 @@ class Main extends Sprite
 		});
 	}
 
-	/**
-	 * Retorna o diretório de storage externo do Android via JNI.
-	 * Equivalente a Context.getExternalFilesDir(null).getAbsolutePath()
-	 * Resultado: /storage/emulated/0/Android/data/com.shadowmario.psychengine/files
-	 *
-	 * Fallback: internal storage via lime, caso o JNI falhe.
-	 */
+	// ═══════════════════════════════════════════════════════════════════
+	//  ANDROID — External Storage
+	// ═══════════════════════════════════════════════════════════════════
+
 	#if android
-	public static function getExternalStorageDir():String
+	/**
+	 * Retorna o caminho cru do external storage via JNI.
+	 * → Context.getExternalFilesDir(null).getAbsolutePath()
+	 * Exemplo: /storage/emulated/0/Android/data/com.shadowmario.psychengine/files
+	 *
+	 * O usuário consegue acessar essa pasta via qualquer gerenciador de
+	 * arquivos em Android 5+ sem precisar de root.
+	 */
+	static function _getExternalStorageDirRaw():String
 	{
 		try
 		{
-			// Pega a instância da Activity principal do Lime
-			var getInstance = lime.system.JNI.createStaticMethod(
-				"org/haxe/lime/GameActivity",
-				"getInstance",
+			var getInstance = JNI.createStaticMethod(
+				"org/haxe/lime/GameActivity", "getInstance",
 				"()Lorg/haxe/lime/GameActivity;"
 			);
-			var activity = getInstance();
-
-			// Chama getExternalFilesDir(null) — retorna um java.io.File
-			var getExternalFilesDir = lime.system.JNI.createMemberMethod(
-				"android/app/Activity",
-				"getExternalFilesDir",
+			var getExternalFilesDir = JNI.createMemberMethod(
+				"android/app/Activity", "getExternalFilesDir",
 				"(Ljava/lang/String;)Ljava/io/File;"
 			);
-			var file = getExternalFilesDir(activity, null);
-
-			// Converte File em String com getAbsolutePath()
-			var getAbsolutePath = lime.system.JNI.createMemberMethod(
-				"java/io/File",
-				"getAbsolutePath",
+			var getAbsolutePath = JNI.createMemberMethod(
+				"java/io/File", "getAbsolutePath",
 				"()Ljava/lang/String;"
 			);
-			var path:String = getAbsolutePath(file);
-
+			var path:String = getAbsolutePath(getExternalFilesDir(getInstance(), null));
 			if (path != null && path.length > 0)
 				return path;
 		}
 		catch (e:Dynamic)
 		{
-			trace('[WARN] getExternalStorageDir JNI failed: $e — falling back to internal storage');
+			trace('[Main] JNI getExternalStorageDir failed: $e — using internal storage');
 		}
-
-		// Fallback: internal storage
 		return lime.system.System.applicationStorageDirectory;
 	}
-	#end
+
+	/**
+	 * Garante que a estrutura de pastas do PsychEngine existe no
+	 * external storage e copia os arquivos iniciais (assets embarcados
+	 * e mods de exemplo) se ainda não foram copiados.
+	 *
+	 * Pastas criadas em <externalDir>/:
+	 *   assets/       → assets embarcados (fonts, shared, songs, etc.)
+	 *   mods/         → pasta de mods do usuário
+	 *   crash/        → logs de crash
+	 *   modsList.txt  → lista de mods ativos (gerada se ausente)
+	 *
+	 * Detecção de "primeira vez": verifica o arquivo ".initialized"
+	 * dentro do external storage. Se não existir, copia tudo e o cria.
+	 * Isso evita re-copiar a cada abertura do app.
+	 */
+	static function _setupExternalStorage(extDir:String):Void
+	{
+		// Cria as pastas essenciais (FileSystem.createDirectory é no-op se já existir)
+		for (folder in ['assets', 'mods', 'crash'])
+		{
+			var p = extDir + folder;
+			if (!FileSystem.exists(p))
+			{
+				try { FileSystem.createDirectory(p); }
+				catch (e:Dynamic) trace('[Main] mkdir $p failed: $e');
+			}
+		}
+
+		// modsList.txt — gerado com conteúdo vazio se não existir
+		var modsListPath = extDir + 'modsList.txt';
+		if (!FileSystem.exists(modsListPath))
+		{
+			try { File.saveContent(modsListPath, ''); }
+			catch (e:Dynamic) trace('[Main] modsList.txt create failed: $e');
+		}
+
+		// Verifica se os assets já foram copiados nessa instalação
+		var initFlag = extDir + '.initialized';
+		if (FileSystem.exists(initFlag)) return; // já foi feito antes
+
+		// ── Copia assets embarcados para o external ───────────────────
+		// Os assets ficam no APK como OpenFL embedded assets.
+		// Copiá-los para o external permite que mods os sobrescrevam
+		// em runtime, já que Paths.hx busca lá primeiro.
+		_copyEmbeddedAssets(extDir);
+
+		// ── Marca como inicializado ───────────────────────────────────
+		try { File.saveContent(initFlag, Date.now().toString()); }
+		catch (e:Dynamic) trace('[Main] .initialized create failed: $e');
+
+		trace('[Main] External storage setup complete at: $extDir');
+	}
+
+	/**
+	 * Copia todos os assets OpenFL embarcados para o external storage.
+	 * Apenas arquivos que ainda não existem no destino são copiados
+	 * (preserva modificações do usuário em re-instalações).
+	 *
+	 * A cópia inclui:
+	 *   assets/fonts, assets/shared, assets/songs, assets/week_assets,
+	 *   assets/embed, assets/videos (se VIDEOS_ALLOWED), etc.
+	 */
+	static function _copyEmbeddedAssets(extDir:String):Void
+	{
+		var list:Array<String>;
+		try { list = openfl.Assets.list(); }
+		catch (e:Dynamic) { trace('[Main] Assets.list() failed: $e'); return; }
+
+		for (assetId in list)
+		{
+			// Apenas assets do tipo TEXT, BINARY, SOUND, IMAGE, etc.
+			// O id já é o path relativo: "assets/shared/images/..."
+			var destPath = extDir + assetId;
+			if (FileSystem.exists(destPath)) continue; // não sobrescreve
+
+			// Garante que o diretório pai existe
+			var dir = Path.directory(destPath);
+			if (!FileSystem.exists(dir))
+			{
+				try { FileSystem.createDirectory(dir); }
+				catch (e:Dynamic) { trace('[Main] mkdir $dir failed: $e'); continue; }
+			}
+
+			// Copia o conteúdo binário
+			try
+			{
+				var bytes = openfl.Assets.getBytes(assetId);
+				if (bytes != null)
+					File.saveBytes(destPath, bytes);
+			}
+			catch (e:Dynamic)
+			{
+				trace('[Main] copy $assetId failed: $e');
+			}
+		}
+	}
+	#end // android
+
+	// ═══════════════════════════════════════════════════════════════════
+	//  Utilitários
+	// ═══════════════════════════════════════════════════════════════════
 
 	static function resetSpriteCache(sprite:Sprite):Void {
 		@:privateAccess {
@@ -246,6 +353,10 @@ class Main extends Sprite
 			sprite.__cacheBitmapData = null;
 		}
 	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	//  Crash Handler
+	// ═══════════════════════════════════════════════════════════════════
 
 	#if CRASH_HANDLER
 	function onCrash(e:UncaughtErrorEvent):Void
@@ -259,9 +370,9 @@ class Main extends Sprite
 		dateNow = dateNow.replace(":", "'");
 
 		#if android
-		var crashDir:String = Path.addTrailingSlash(getExternalStorageDir()) + "crash/";
+		var crashDir:String = externalDir + "crash/";
 		#elseif mobile
-		var crashDir:String = lime.system.System.applicationStorageDirectory + "crash/";
+		var crashDir:String = Path.addTrailingSlash(lime.system.System.applicationStorageDirectory) + "crash/";
 		#else
 		var crashDir:String = "./crash/";
 		#end
