@@ -34,18 +34,62 @@ class Paths
 
         /**
          * Diretório raiz de armazenamento.
-         * Em mobile (Android/iOS) aponta para applicationStorageDirectory.
-         * Em desktop retorna string vazia (paths relativos normais).
+         * - Android : external storage via JNI (/storage/emulated/0/Android/data/<pkg>/files/)
+         *             com fallback para internal se o JNI falhar.
+         * - iOS     : applicationStorageDirectory (único storage disponível).
+         * - Desktop : string vazia (paths relativos normais).
+         *
+         * Sempre termina com '/'. Cacheado após a primeira chamada.
          */
+        static var _storagePath:String = null;
         public static var storagePath(get, never):String;
         static function get_storagePath():String
         {
-                #if MOBILE_DATA
-                return LimeSystem.applicationStorageDirectory;
+                if (_storagePath != null) return _storagePath;
+
+                #if android
+                _storagePath = haxe.io.Path.addTrailingSlash(_getAndroidExternalDir());
+                #elseif (ios || MOBILE_DATA)
+                _storagePath = haxe.io.Path.addTrailingSlash(LimeSystem.applicationStorageDirectory);
                 #else
-                return '';
+                _storagePath = '';
                 #end
+
+                return _storagePath;
         }
+
+        /**
+         * Retorna o path de external storage do Android via JNI.
+         * Equivalente a Context.getExternalFilesDir(null).getAbsolutePath().
+         * Fallback: internal storage se o JNI falhar.
+         */
+        #if android
+        static function _getAndroidExternalDir():String
+        {
+                try
+                {
+                        var getInstance = lime.system.JNI.createStaticMethod(
+                                "org/haxe/lime/GameActivity", "getInstance",
+                                "()Lorg/haxe/lime/GameActivity;"
+                        );
+                        var getExternalFilesDir = lime.system.JNI.createMemberMethod(
+                                "android/app/Activity", "getExternalFilesDir",
+                                "(Ljava/lang/String;)Ljava/io/File;"
+                        );
+                        var getAbsolutePath = lime.system.JNI.createMemberMethod(
+                                "java/io/File", "getAbsolutePath",
+                                "()Ljava/lang/String;"
+                        );
+                        var path:String = getAbsolutePath(getExternalFilesDir(getInstance(), null));
+                        if (path != null && path.length > 0) return path;
+                }
+                catch (e:Dynamic)
+                {
+                        trace('[Paths] _getAndroidExternalDir JNI failed: $e — using internal storage');
+                }
+                return LimeSystem.applicationStorageDirectory;
+        }
+        #end
 
         public static function excludeAsset(key:String) {
                 if (!dumpExclusions.contains(key))
@@ -300,12 +344,14 @@ class Paths
 
         inline static public function getTextFromFile(key:String, ?ignoreMods:Bool = false):String
         {
-                var path:String = getPath(key, TEXT, !ignoreMods);
+                // getPath 4th param is modsAllowed (Bool), not parentfolder
+                var path:String = getPath(key, TEXT, null, !ignoreMods);
                 #if sys
                 if (FileSystem.exists(path)) return File.getContent(path);
                 #if MOBILE_DATA
-                // Em mobile, tenta também no storagePath
-                var mobilePath:String = storagePath + path;
+                // Em mobile com MODS_ALLOWED, tenta também direto no storagePath
+                // (cobre arquivos soltos fora da pasta mods/, ex: modsList.txt)
+                var mobilePath:String = storagePath + key;
                 if (FileSystem.exists(mobilePath)) return File.getContent(mobilePath);
                 #end
                 return null;
