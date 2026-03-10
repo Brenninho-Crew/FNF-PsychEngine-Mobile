@@ -48,40 +48,70 @@ class FlashingState extends MusicBeatState
 
 	override function update(elapsed:Float)
 	{
-		if(leftState) {
+		if (leftState) {
 			super.update(elapsed);
 			return;
 		}
+
 		var back:Bool = controls.BACK;
+
 		if (controls.UI_LEFT_P || controls.UI_RIGHT_P) {
 			FlxG.sound.play(Paths.sound("scrollMenu"), 0.7);
 			isYes = !isYes;
 			updateItems();
 		}
+
+		#if mobile
+		for (touch in FlxG.touches.justReleased()) {
+			// Toque no botão Yes (members[1])
+			if (texts.members[1] != null && touch.overlaps(texts.members[1])) {
+				isYes = true;
+				updateItems();
+				confirmSelection();
+				return;
+			}
+			// Toque no botão No (members[2])
+			if (texts.members[2] != null && touch.overlaps(texts.members[2])) {
+				isYes = false;
+				updateItems();
+				confirmSelection();
+				return;
+			}
+		}
+		#end
+
 		if (controls.ACCEPT || back) {
-			leftState = true;
-			FlxTransitionableState.skipNextTransIn = true;
-			FlxTransitionableState.skipNextTransOut = true;
-			if(!back) {
-				ClientPrefs.data.flashing = !isYes;
-				ClientPrefs.saveSettings();
-				FlxG.sound.play(Paths.sound('confirmMenu'));
-				final button = texts.members[isYes ? 1 : 2];
-				FlxFlicker.flicker(button, 1, 0.1, false, true, function(flk:FlxFlicker) {
-					new FlxTimer().start(0.5, function (tmr:FlxTimer) {
-						FlxTween.tween(texts, {alpha: 0}, 0.2, {
-							onComplete: (_) -> MusicBeatState.switchState(new TitleState())
-						});
-					});
-				});
-			} else {
+			if (!back)
+				confirmSelection();
+			else {
+				leftState = true;
+				FlxTransitionableState.skipNextTransIn = true;
+				FlxTransitionableState.skipNextTransOut = true;
 				FlxG.sound.play(Paths.sound('cancelMenu'));
 				FlxTween.tween(texts, {alpha: 0}, 1, {
 					onComplete: (_) -> MusicBeatState.switchState(new TitleState())
 				});
 			}
 		}
+
 		super.update(elapsed);
+	}
+
+	function confirmSelection() {
+		leftState = true;
+		FlxTransitionableState.skipNextTransIn = true;
+		FlxTransitionableState.skipNextTransOut = true;
+		ClientPrefs.data.flashing = !isYes;
+		ClientPrefs.saveSettings();
+		FlxG.sound.play(Paths.sound('confirmMenu'));
+		final button = texts.members[isYes ? 1 : 2];
+		FlxFlicker.flicker(button, 1, 0.1, false, true, function(flk:FlxFlicker) {
+			new FlxTimer().start(0.5, function(tmr:FlxTimer) {
+				FlxTween.tween(texts, {alpha: 0}, 0.2, {
+					onComplete: (_) -> MusicBeatState.switchState(new TitleState())
+				});
+			});
+		});
 	}
 
 	function updateItems() {
