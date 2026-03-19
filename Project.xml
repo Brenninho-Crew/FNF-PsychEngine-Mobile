@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <project>
         <!-- _________________________ Application Settings _________________________ -->
-        <app title="FNF: Psych Engine Mobile" file="PsychEngine-Mobile"
+        <app title="FNF: Psych Engine" file="PsychEngine-Mobile"
                 packageName="com.brenninho.psychengine.mobile"
                 package="com.brenninho.psychengine.mobile"
                 main="Main" version="1.0.0" company="Brenninho-Crew" />
 
         <!-- ______________________ PSYCH ENGINE CUSTOMIZATION ______________________ -->
-        <!-- Mobile: Mods permitidos, Lua/Hscript desabilitados para performance -->
         <define name="MODS_ALLOWED" if="android" />
         <define name="ACHIEVEMENTS_ALLOWED" />
         <define name="TRANSLATIONS_ALLOWED" />
@@ -20,11 +19,16 @@
         <define name="MOBILE_DATA" if="mobile" />
         <define name="TOUCH_CONTROLS" if="mobile" />
         
-        <!-- OBB Support: indica que assets serão lidos do .obb -->
+        <!-- OBB Support + Google Play Licensing -->
         <define name="OBB_SUPPORT" if="android" />
+        <define name="GOOGLE_PLAY_LICENSING" if="android release" />
         
-        <!-- Video support (opcional, pode causar lag em dispositivos mais fracos) -->
-        <!-- <define name="VIDEOS_ALLOWED" if="android" unless="lowEndDevice" /> -->
+        <!-- Video support (mantido, mas otimizado) -->
+        <define name="VIDEOS_ALLOWED" if="android" />
+        
+        <!-- GAMEPAD SUPORTADO NATIVAMENTE PELO FLIXEL -->
+        <!-- Flixel tem suporte nativo a gamepad, não precisa de extensão extra -->
+        <haxedef name="FLX_GAMEPAD_API" if="android" />
         
         <!-- ____________________________ Window Settings ___________________________ -->
         <window width="1280" height="720" fps="60" background="#000000" 
@@ -42,144 +46,186 @@
         
         <!-- ====================== Android Permissions ============================ -->
         <section if="android">
-                <!-- Storage permissions para ler mods do armazenamento externo -->
+                <!-- Permissões de armazenamento - DETECÇÃO AUTOMÁTICA -->
+                <define name="STORAGE_PERMISSIONS" />
+                
+                <!-- Permissões para Android 10-12 -->
                 <dependency name="READ_EXTERNAL_STORAGE" 
                             value="android.permission.READ_EXTERNAL_STORAGE" if="MODS_ALLOWED" />
                 <dependency name="WRITE_EXTERNAL_STORAGE" 
                             value="android.permission.WRITE_EXTERNAL_STORAGE" if="MODS_ALLOWED" />
                 
-                <!-- Android 13+ permission for media files -->
+                <!-- Permissões para Android 13+ (Media Access) -->
                 <dependency name="READ_MEDIA_IMAGES" 
                             value="android.permission.READ_MEDIA_IMAGES" if="MODS_ALLOWED" />
                 <dependency name="READ_MEDIA_AUDIO" 
                             value="android.permission.READ_MEDIA_AUDIO" if="MODS_ALLOWED" />
+                <dependency name="READ_MEDIA_VIDEO" 
+                            value="android.permission.READ_MEDIA_VIDEO" if="MODS_ALLOWED" />
                 
-                <!-- Internet para possíveis updates futuros -->
+                <!-- Permissão para Android 14+ (Media Access) -->
+                <dependency name="READ_MEDIA_VISUAL_USER_SELECTED" 
+                            value="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" if="MODS_ALLOWED" />
+                
+                <!-- Internet para licenciamento Google Play -->
                 <dependency name="INTERNET" value="android.permission.INTERNET" />
-                <!-- Vibrate para feedback tátil nos controles touch -->
+                <dependency name="ACCESS_NETWORK_STATE" value="android.permission.ACCESS_NETWORK_STATE" />
+                
+                <!-- Feedback tátil -->
                 <dependency name="VIBRATE" value="android.permission.VIBRATE" />
+        </section>
+        
+        <!-- ====================== Google Play Licensing ========================== -->
+        <section if="GOOGLE_PLAY_LICENSING">
+                <!-- Google Play Licensing Library -->
+                <dependency name="com.android.vending.licensing"
+                            value="com.google.android.vending.licensing.Library" />
+                
+                <!-- Meta-data para a licensing policy -->
+                <meta if="android" 
+                      title="com.google.android.vending.licensing.LICENSE_POLICY" 
+                      content="com.google.android.vending.licensing.StrictPolicy" />
+                
+                <!-- Base64 da sua public key (obtida no Google Play Console) -->
+                <define name="GOOGLE_PLAY_PUBLIC_KEY" value="SUA_CHAVE_PUBLICA_AQUI" />
         </section>
         
         <!-- _____________________________ Path Settings ____________________________ -->
         <set name="BUILD_DIR" value="export/release" unless="debug" />
         <classpath name="source" />
         
-        <!-- __________________________ Game Assets & OBB Setup _____________________ -->
+        <!-- __________________________ Assets & OBB Setup _________________________ -->
         
-        <!--
-            CONFIGURAÇÃO PARA ANDROID COM OBB:
-            
-            O diretório "shared" será empacotado no APK (pequeno, apenas código).
-            Os diretórios pesados (songs, week_assets, videos) vão para o OBB.
-            
-            Para gerar o OBB:
-            1. Após compilar, use o script expansion-files do Android SDK
-            2. Ou use a ferramenta "obb-maker" disponível em tools/
-        -->
-        
-        <!-- Assets essenciais que ficam no APK (fontes, configurações, UI) -->
+        <!-- Assets essenciais no APK -->
         <assets path="assets/fonts" embed="true" />
         <assets path="assets/embed" embed="true" />
-        <assets path="assets/shared" embed="true" exclude="*.ogg,*.mp3,*.wav,*.png" />
+        <assets path="assets/shared" embed="true" exclude="*.ogg,*.mp3,*.wav,*.png,*.jpg,*.jpeg" />
         
-        <!-- Assets que vão para o OBB (músicas, imagens grandes, vídeos) -->
+        <!-- Assets que vão para OBB -->
         <section if="OBB_SUPPORT">
-            <!-- Estes paths serão lidos do OBB em runtime pelo Paths.hx -->
             <assets path="assets/songs" embed="false" rename="obb/assets/songs" />
             <assets path="assets/week_assets" embed="false" rename="obb/assets/week_assets" />
             <assets path="assets/videos" embed="false" rename="obb/assets/videos" if="VIDEOS_ALLOWED" />
+            <assets path="assets/shared/images" embed="false" rename="obb/assets/shared/images" />
+            <assets path="assets/shared/music" embed="false" rename="obb/assets/shared/music" />
+            <assets path="assets/shared/sounds" embed="false" rename="obb/assets/shared/sounds" />
         </section>
         
-        <!-- Fallback para builds sem OBB (modo debug) -->
+        <!-- Fallback para builds sem OBB -->
         <section unless="OBB_SUPPORT">
-            <assets path="assets/songs" exclude="*.ogg" if="web" />
-            <assets path="assets/songs" exclude="*.mp3" unless="web" />
-            <assets path="assets/week_assets" rename="assets" exclude="*.ogg" if="web" />
-            <assets path="assets/week_assets" rename="assets" exclude="*.mp3" unless="web" />
+            <assets path="assets/songs" />
+            <assets path="assets/week_assets" rename="assets" />
             <assets path="assets/videos" if="VIDEOS_ALLOWED" />
+            <assets path="assets/shared/images" />
+            <assets path="assets/shared/music" />
+            <assets path="assets/shared/sounds" />
         </section>
         
         <!-- __________________________ Mods Configuration __________________________ -->
         
         <!--
-            MODS NO ANDROID:
+            SISTEMA AUTOMÁTICO DE DETECÇÃO DE PASTA EXTERNA
             
-            Prioridade de busca (implementar no Paths.hx):
-            1. /storage/emulated/0/Android/data/com.brenninho.psychengine.mobile/files/mods/
-            2. /storage/emulated/0/FNF-Mods/ (fallback para fácil acesso)
-            3. /sdcard/FNF-Mods/
-            4. OBB:/assets/mods/ (mods base embutidos no OBB)
+            O Paths.hx irá verificar as seguintes localizações em ordem:
             
-            O diretório "example_mods" NÃO é embutido no APK para economizar espaço.
-            Em vez disso, os mods exemplo serão distribuídos via OBB ou como download separado.
+            1. PRIMARY EXTERNAL (Android/data) - Recomendado
+               /storage/emulated/0/Android/data/com.brenninho.psychengine.mobile/files/mods/
+            
+            2. LEGACY EXTERNAL (SD Card root)
+               /storage/emulated/0/FNF-Mods/
+               /storage/AAAA-AAAA/FNF-Mods/ (SD Card externo)
+            
+            3. OBB FALLBACK
+               /obb/assets/mods/
+            
+            4. INTERNAL FALLBACK
+               /data/data/com.brenninho.psychengine.mobile/files/mods/
         -->
         
         <section if="MODS_ALLOWED android">
-            <!-- Não embute mods no APK -->
+            <!-- Não embute mods no APK (exceto debug) -->
             <assets path='example_mods' embed='false' if="debug" />
             
-            <!-- Arquivo de lista de mods (pode ser gerado dinamicamente) -->
+            <!-- Arquivo de lista de mods (gerado dinamicamente) -->
             <assets path='list.txt' rename='modsList.txt' embed='false' />
             
-            <!-- Configuração para leitura de mods do storage -->
-            <define name="MODS_EXTERNAL_STORAGE" />
-            <define name="MODS_EXTERNAL_PATH" value="FNF-Mods" />
-            <define name="MODS_EXTERNAL_FALLBACK" value="Android/data/com.brenninho.psychengine.mobile/files/mods" />
+            <!-- Configurações para detecção automática -->
+            <define name="MODS_AUTO_DETECT" />
+            <define name="MODS_PRIMARY_PATH" value="Android/data/com.brenninho.psychengine.mobile/files/mods" />
+            <define name="MODS_LEGACY_PATH" value="FNF-Mods" />
+            
+            <!-- Meta-data para o AndroidManifest.xml -->
+            <meta if="android" 
+                  title="com.brenninho.psychengine.mobile.mods.AUTO_DETECT" 
+                  content="true" />
+            <meta if="android" 
+                  title="com.brenninho.psychengine.mobile.mods.PRIMARY_PATH" 
+                  content="${MODS_PRIMARY_PATH}" />
         </section>
         
         <!-- _______________________________ Libraries ______________________________ -->
         
-        <!-- Core libraries (versões estáveis) -->
+        <!-- Core libraries -->
         <haxelib name="flixel" version="5.6.1" />
         <haxelib name="flixel-addons" version="3.2.2" />
         <haxelib name="tjson" version="1.4.0" />
         <haxelib name="flxanimate" />
         
-        <!-- Mobile-specific extensions -->
+        <!-- Android extensions (apenas essentials) -->
         <haxelib name="extension-androidtools" if="android" />
         
-        <!-- Optional: Video support (comente se causar problemas) -->
-        <!-- <haxelib name="hxvlc" if="VIDEOS_ALLOWED android" version="2.0.1" /> -->
+        <!-- Video support -->
+        <haxelib name="hxvlc" if="VIDEOS_ALLOWED android" version="2.0.1" />
         
-        <!-- Performance: desabilitar features pesadas no mobile -->
+        <!-- Google Play Licensing (se ativado) -->
+        <haxelib name="extension-googleplayservices" if="GOOGLE_PLAY_LICENSING" />
+        
+        <!-- Performance -->
         <haxedef name="NO_PRECOMPILED_HEADERS" if="android" />
-        
-        <!-- Debug tools (apenas debug builds) -->
-        <haxelib name="hxcpp-debug-server" if="debug" />
         
         <!-- ______________________________ Haxedefines _____________________________ -->
         
-        <!-- Mobile-specific optimizations -->
+        <!-- Mobile optimizations -->
         <haxedef name="FLX_NO_FOCUS_LOST_SCREEN" />
         <haxedef name="MOBILE_TOUCH_CONTROLS" if="TOUCH_CONTROLS" />
         
         <!-- Touch control settings -->
-        <haxedef name="TOUCH_CONTROL_SIZE" value="200" if="TOUCH_CONTROLS" />
-        <haxedef name="TOUCH_CONTROL_OPACITY" value="0.6" if="TOUCH_CONTROLS" />
-        <haxedef name="VIRTUAL_PAD_DEADZONE" value="0.3" if="TOUCH_CONTROLS" />
+        <haxedef name="TOUCH_CONTROL_SIZE" value="180" if="TOUCH_CONTROLS" />
+        <haxedef name="TOUCH_CONTROL_OPACITY" value="0.7" if="TOUCH_CONTROLS" />
+        <haxedef name="VIRTUAL_PAD_DEADZONE" value="0.25" if="TOUCH_CONTROLS" />
         
-        <!-- Memory optimizations for low-end devices -->
+        <!-- GAMEPAD SETTINGS (nativo do Flixel) -->
+        <haxedef name="GAMEPAD_DEADZONE" value="0.2" if="android" />
+        <haxedef name="FLX_GAMEPAD_API" if="android" />
+        
+        <!-- Memory optimizations -->
         <haxedef name="TEXTURE_CACHE_SIZE" value="256" if="android" />
-        <haxedef name="MAX_SOUNDS_CACHED" value="32" if="android" />
+        <haxedef name="MAX_SOUNDS_CACHED" value="48" if="android" />
+        <haxedef name="MAX_VIDEO_MEMORY" value="128" if="android VIDEOS_ALLOWED" />
         
-        <!-- Disable unnecessary desktop features -->
+        <!-- Disable apenas features desktop -->
         <haxedef name="FLX_NO_MOUSE" if="android" />
         <haxedef name="FLX_NO_KEYBOARD" if="android" />
-        <haxedef name="FLX_NO_GAMEPAD" if="android" />
         
         <!-- Crash handling -->
         <haxedef name="CRASH_HANDLER" if="android release" />
-        <haxedef name="HXCPP_CHECK_POINTER" if="CRASH_HANDLER" />
         <haxedef name="HXCPP_STACK_TRACE" if="CRASH_HANDLER" />
         
-        <!-- __________________________ Custom Metadata _____________________________ -->
+        <!-- __________________________ AndroidManifest Meta ________________________ -->
         
-        <!-- Meta-informação para o AndroidManifest.xml -->
-        <meta if="android" title="com.brenninho.psychengine.mobile.metadata.MODS_PATH" 
-              content="/storage/emulated/0/FNF-Mods" />
-        <meta if="android" title="com.brenninho.psychengine.mobile.metadata.OBB_MAIN_VERSION" 
+        <!-- Google Play Licensing verification -->
+        <section if="GOOGLE_PLAY_LICENSING">
+            <meta if="android" 
+                  title="com.google.android.vending.licensing.PUBLIC_KEY" 
+                  content="${GOOGLE_PLAY_PUBLIC_KEY}" />
+        </section>
+        
+        <!-- OBB configuration -->
+        <meta if="android" 
+              title="com.brenninho.psychengine.mobile.obb.MAIN_VERSION" 
               content="1" />
-        <meta if="android" title="com.brenninho.psychengine.mobile.metadata.OBB_PATCH_VERSION" 
+        <meta if="android" 
+              title="com.brenninho.psychengine.mobile.obb.PATCH_VERSION" 
               content="0" />
         
         <!-- _________________________________ Icons _________________________________ -->
@@ -188,5 +234,6 @@
         <icon path="art/icons/icon64.png" size='64' if="android" />
         <icon path="art/icons/icon128.png" size='128' if="android" />
         <icon path="art/icons/icon256.png" size='256' if="android" />
+        <icon path="art/icons/icon512.png" size='512' if="android" />
         <icon path="art/icons/iconOG.png" if="android" />
 </project>
