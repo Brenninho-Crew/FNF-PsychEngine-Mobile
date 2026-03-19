@@ -20,6 +20,11 @@ import haxe.Json;
 
 #if MOBILE_DATA
 import lime.system.System as LimeSystem;
+#if android
+import android.os.Environment;
+import android.content.Context;
+import android.os.Build;
+#end
 #end
 
 #if MODS_ALLOWED
@@ -90,6 +95,180 @@ class Paths
                 return LimeSystem.applicationStorageDirectory;
         }
         #end
+
+        // ===================== NOVAS FUNÇÕES PARA MOBILE =====================
+        
+        #if MODS_ALLOWED && android
+        /**
+         * Sistema automático de detecção de pastas de mods no Android
+         * Verifica em ordem:
+         * 1. PRIMARY: /storage/emulated/0/Android/data/<package>/files/mods/
+         * 2. SD CARD: /storage/XXXX-XXXX/FNF-Mods/
+         * 3. LEGACY:  /storage/emulated/0/FNF-Mods/
+         * 4. OBB:     obb:/assets/mods/
+         * 5. INTERNAL: /data/data/<package>/files/mods/
+         */
+        public static function getModsPath():String
+        {
+                var context = ExtensionAndroidTools.getContext();
+                var packageName = context.getPackageName();
+                var paths:Array<String> = [];
+                
+                // 1. PRIMARY: Android/data (recomendado)
+                try {
+                        var primaryExternal = context.getExternalFilesDir(null);
+                        if (primaryExternal != null) {
+                                var primaryPath = primaryExternal.getAbsolutePath() + "/mods/";
+                                paths.push(primaryPath);
+                                
+                                if (FileSystem.exists(primaryPath)) {
+                                        return primaryPath;
+                                }
+                        }
+                } catch (e:Dynamic) {
+                        trace('Erro ao acessar primary external: $e');
+                }
+                
+                // 2. SD CARD EXTERNO (detecção automática)
+                try {
+                        if (Build.VERSION.SDK_INT >= 24) { // Android 7.0+
+                                var storageManager = context.getSystemService(Context.STORAGE_SERVICE);
+                                var storageVolumes = storageManager.getStorageVolumes();
+                                
+                                for (volume in storageVolumes) {
+                                        var volumePath = volume.getPath();
+                                        if (volumePath != null) {
+                                                // Tenta caminhos no SD card
+                                                var sdModsPath = volumePath + "/FNF-Mods/";
+                                                paths.push(sdModsPath);
+                                                
+                                                if (FileSystem.exists(sdModsPath)) {
+                                                        return sdModsPath;
+                                                }
+                                                
+                                                var sdAndroidPath = volumePath + "/Android/data/" + packageName + "/mods/";
+                                                paths.push(sdAndroidPath);
+                                                
+                                                if (FileSystem.exists(sdAndroidPath)) {
+                                                        return sdAndroidPath;
+                                                }
+                                        }
+                                }
+                        }
+                } catch (e:Dynamic) {
+                        trace('Erro ao detectar SD card: $e');
+                }
+                
+                // 3. LEGACY: /storage/emulated/0/FNF-Mods/
+                try {
+                        var legacyPath = Environment.getExternalStorageDirectory() + "/FNF-Mods/";
+                        paths.push(legacyPath);
+                        
+                        if (FileSystem.exists(legacyPath)) {
+                                return legacyPath;
+                        }
+                } catch (e:Dynamic) {
+                        trace('Erro ao acessar legacy path: $e');
+                }
+                
+                // 4. OBB FALLBACK
+                var obbPath = "obb:/assets/mods/";
+                paths.push(obbPath);
+                
+                // 5. INTERNAL FALLBACK
+                var internalPath = context.getFilesDir() + "/mods/";
+                paths.push(internalPath);
+                
+                // Retorna o primeiro caminho que existe
+                for (path in paths) {
+                        if (FileSystem.exists(path)) {
+                                return path;
+                        }
+                }
+                
+                // Se nada existir, cria o primary
+                var finalPath = context.getExternalFilesDir(null) + "/mods/";
+                try {
+                        FileSystem.createDirectory(finalPath);
+                } catch (e:Dynamic) {}
+                
+                return finalPath;
+        }
+        
+        /**
+         * Verifica se há permissão de armazenamento no Android
+         */
+        public static function hasStoragePermission():Bool
+        {
+                #if android
+                var context = ExtensionAndroidTools.getContext();
+                if (Build.VERSION.SDK_INT >= 33) { // Android 13+
+                        return (context.checkSelfPermission(android.Manifest.permission.READ_MEDIA_AUDIO) == 0);
+                } else {
+                        return (context.checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == 0);
+                }
+                #else
+                return true;
+                #end
+        }
+        
+        /**
+         * Solicita permissões de armazenamento (para chamar no início)
+         */
+        public static function requestStoragePermissions():Void
+        {
+                #if android
+                var permissions:Array<String> = [];
+                
+                if (Build.VERSION.SDK_INT >= 33) { // Android 13+
+                        permissions.push(android.Manifest.permission.READ_MEDIA_AUDIO);
+                        permissions.push(android.Manifest.permission.READ_MEDIA_IMAGES);
+                        permissions.push(android.Manifest.permission.READ_MEDIA_VIDEO);
+                } else {
+                        permissions.push(android.Manifest.permission.READ_EXTERNAL_STORAGE);
+                        permissions.push(android.Manifest.permission.WRITE_EXTERNAL_STORAGE);
+                }
+                
+                ExtensionAndroidTools.requestPermissions(permissions);
+                #end
+        }
+        #end
+        
+        /**
+         * Versão modificada de getPath que prioriza OBB no Android
+         */
+        public static function getPathMobile(file:String, ?type:AssetType = TEXT, ?parentfolder:String, ?modsAllowed:Bool = true):String
+        {
+                #if MODS_ALLOWED && android
+                if(modsAllowed)
+                {
+                        var customFile:String = file;
+                        if (parentfolder != null) customFile = '$parentfolder/$file';
+                        
+                        // Tenta nos mods primeiro
+                        var modded:String = modFolders(customFile);
+                        if(FileSystem.exists(modded)) return modded;
+                        
+                        // Tenta no OBB
+                        var obbPath:String = 'obb:/assets/' + customFile;
+                        if (OpenFlAssets.exists(obbPath, type)) {
+                                return obbPath;
+                        }
+                }
+                #end
+                
+                // Fallback para o método original
+                if (parentfolder != null)
+                        return getFolderPath(file, parentfolder);
+                
+                if (currentLevel != null && currentLevel != 'shared')
+                {
+                        var levelPath = getFolderPath(file, currentLevel);
+                        if (OpenFlAssets.exists(levelPath, type))
+                                return levelPath;
+                }
+                return getSharedPath(file);
+        }
 
         public static function excludeAsset(key:String) {
                 if (!dumpExclusions.contains(key))
@@ -219,6 +398,14 @@ class Paths
 
                         var modded:String = modFolders(customFile);
                         if(FileSystem.exists(modded)) return modded;
+                        
+                        #if android
+                        // Tenta no OBB se existir
+                        var obbPath:String = 'obb:/assets/' + customFile;
+                        if (OpenFlAssets.exists(obbPath, type)) {
+                                return obbPath;
+                        }
+                        #end
                 }
                 #end
 
@@ -263,6 +450,11 @@ class Paths
                 #if MODS_ALLOWED
                 var file:String = modsVideo(key);
                 if(FileSystem.exists(file)) return file;
+                
+                #if android
+                var obbVideo:String = 'obb:/assets/videos/$key.$VIDEO_EXT';
+                if(OpenFlAssets.exists(obbVideo, BINARY)) return obbVideo;
+                #end
                 #end
                 return 'assets/videos/$key.$VIDEO_EXT';
         }
@@ -348,12 +540,22 @@ class Paths
                 var path:String = getPath(key, TEXT, null, !ignoreMods);
                 #if sys
                 if (FileSystem.exists(path)) return File.getContent(path);
+                
                 #if MOBILE_DATA
                 // Em mobile com MODS_ALLOWED, tenta também direto no storagePath
                 // (cobre arquivos soltos fora da pasta mods/, ex: modsList.txt)
                 var mobilePath:String = storagePath + key;
                 if (FileSystem.exists(mobilePath)) return File.getContent(mobilePath);
+                
+                #if android
+                // Tenta no OBB
+                var obbPath:String = 'obb:/assets/' + key;
+                if (OpenFlAssets.exists(obbPath, TEXT)) {
+                        return OpenFlAssets.getText(obbPath);
+                }
                 #end
+                #end
+                
                 return null;
                 #else
                 return (OpenFlAssets.exists(path, TEXT)) ? Assets.getText(path) : null;
@@ -366,6 +568,11 @@ class Paths
                 #if MODS_ALLOWED
                 var file:String = modFolders(folderKey);
                 if(FileSystem.exists(file)) return file;
+                
+                #if android
+                var obbFont:String = 'obb:/assets/$folderKey';
+                if(OpenFlAssets.exists(obbFont, FONT)) return obbFont;
+                #end
                 #end
                 return 'assets/$folderKey';
         }
@@ -384,6 +591,11 @@ class Paths
 
                         if (FileSystem.exists(mods(Mods.currentModDirectory + '/' + modKey)) || FileSystem.exists(mods(modKey)))
                                 return true;
+                                
+                        #if android
+                        var obbKey:String = 'obb:/assets/' + (parentFolder != null ? '$parentFolder/' : '') + key;
+                        if(OpenFlAssets.exists(obbKey, type)) return true;
+                        #end
                 }
                 #end
                 return (OpenFlAssets.exists(getPath(key, type, parentFolder, false)));
@@ -543,6 +755,27 @@ class Paths
 
         static public function modFolders(key:String)
         {
+                #if android
+                // Usa o sistema automático de detecção
+                var modsBasePath = getModsPath();
+                
+                if(Mods.currentModDirectory != null && Mods.currentModDirectory.length > 0)
+                {
+                        var fileToCheck:String = modsBasePath + Mods.currentModDirectory + '/' + key;
+                        if(FileSystem.exists(fileToCheck))
+                                return fileToCheck;
+                }
+
+                for(mod in Mods.getGlobalMods())
+                {
+                        var fileToCheck:String = modsBasePath + mod + '/' + key;
+                        if(FileSystem.exists(fileToCheck))
+                                return fileToCheck;
+                }
+                
+                // Fallback para o método antigo
+                return modsBasePath + key;
+                #else
                 if(Mods.currentModDirectory != null && Mods.currentModDirectory.length > 0)
                 {
                         var fileToCheck:String = mods(Mods.currentModDirectory + '/' + key);
@@ -557,6 +790,7 @@ class Paths
                                 return fileToCheck;
                 }
                 return storagePath + 'mods/' + key;
+                #end
         }
         #end
 
